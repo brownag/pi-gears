@@ -1,0 +1,57 @@
+{
+  "gears": [
+    {
+      "id": 1,
+      "name": "gpu-plan",
+      "alias": ["plan", "1"],
+      "provider": "gpu",
+      "model": "large-reasoning",
+      "modelId": "gpu/large-reasoning",
+      "temperature": 0.6,
+      "thinking": true,
+      "description": "GPU primary: deep reasoning & architecture"
+    },
+    {
+      "id": 2,
+      "name": "gpu-exec",
+      "alias": ["exec", "2"],
+      "provider": "gpu",
+      "model": "medium-fast",
+      "modelId": "gpu/medium-fast",
+      "temperature": 0.1,
+      "thinking": false,
+      "description": "GPU primary: fast deterministic execution"
+    },
+    {
+      "id": 3,
+      "name": "cpu-plan",
+      "alias": ["cpu-plan", "3"],
+      "provider": "cpu",
+      "model": "large-reasoning",
+      "modelId": "cpu/large-reasoning",
+      "temperature": 0.6,
+      "thinking": true,
+      "description": "CPU secondary: reasoning with system RAM"
+    },
+    {
+      "id": 4,
+      "name": "cpu-exec",
+      "alias": ["cpu-exec", "4"],
+      "provider": "cpu",
+      "model": "medium-fast",
+      "modelId": "cpu/medium-fast",
+      "temperature": 0.1,
+      "thinking": false,
+      "description": "CPU secondary: fast execution"
+    }
+  ],
+  "interceptors": {
+    "subagent": {
+      "enabled": true,
+      "propagateModel": true,
+      "propagateThinking": true,
+      "preserveExplicitThinking": true,
+      "targetAgents": []
+    }
+  }
+}
