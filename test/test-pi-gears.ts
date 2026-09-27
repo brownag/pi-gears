@@ -40,6 +40,9 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const sandboxDir = path.resolve(projectRoot, "test-sandbox");
 
+/** Subagent tool input; `model` is filled in by the interceptor. */
+type SubagentTaskInput = { agent: string; task: string; model?: string };
+
 let passed = 0;
 let failed = 0;
 
@@ -423,9 +426,9 @@ async function main() {
   await runTest("Target agent filtering: patches worker/reviewer but leaves explorer unmodified", async () => {
     const gear = findGear(1)!; // Gear 1 is r9700/qwen-gear-1, thinking: true
 
-    const workerInput = { agent: "worker", task: "code something" };
-    const reviewerInput = { agent: "reviewer", task: "review something" };
-    const explorerInput = { agent: "explorer", task: "explore something" };
+    const workerInput: SubagentTaskInput = { agent: "worker", task: "code something" };
+    const reviewerInput: SubagentTaskInput = { agent: "reviewer", task: "review something" };
+    const explorerInput: SubagentTaskInput = { agent: "explorer", task: "explore something" };
 
     const ctx = {
       activeGear: gear,
@@ -449,7 +452,7 @@ async function main() {
   await runTest("Target agent filtering: wildcard * matches any agent name", async () => {
     const gear = findGear(2)!; // Gear 2 is r9700/qwen-gear-2, thinking: false
 
-    const customInput = { agent: "any-custom-agent", task: "do something" };
+    const customInput: SubagentTaskInput = { agent: "any-custom-agent", task: "do something" };
     const ctx = {
       activeGear: gear,
       gearTargetModel: gear.modelId,
@@ -474,8 +477,8 @@ async function main() {
       },
     };
 
-    const workerInput = { agent: "worker", task: "task" };
-    const coderInput = { agent: "coder", task: "task" };
+    const workerInput: SubagentTaskInput = { agent: "worker", task: "task" };
+    const coderInput: SubagentTaskInput = { agent: "coder", task: "task" };
 
     const ctx = {
       activeGear: customGear,
@@ -493,7 +496,7 @@ async function main() {
   await runTest("Subagent interceptor patches parallel and chain dispatch arrays", async () => {
     const gear = findGear(2)!; // Gear 2: r9700/qwen-gear-2, thinking: false (:off)
 
-    const parallelInput = {
+    const parallelInput: { parallel: SubagentTaskInput[] } = {
       parallel: [
         { agent: "worker", task: "task 1" },
         { agent: "explorer", task: "task 2" },
@@ -501,7 +504,7 @@ async function main() {
       ],
     };
 
-    const chainInput = {
+    const chainInput: { chain: SubagentTaskInput[] } = {
       chain: [
         { agent: "worker", task: "step 1" },
         { agent: "coder", task: "step 2" },
