@@ -1,14 +1,17 @@
 /**
  * Test Suite for pi-gears: extension logic, gear registry, and sandboxed installer.
  *
- * Strict constraint: Zero modifications to ~/.pi.
- * All tests operate purely in-memory or within test-sandbox/.
+ * Strict constraint: Zero reads or writes of ~/.pi.
+ * Config comes from test/fixtures/agent/ (see setup-env.ts); installer tests write only to test-sandbox/.
  */
+
+import { FIXTURE_AGENT_DIR } from "./setup-env.js";
 
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 import {
   GEARS,
@@ -65,6 +68,10 @@ async function main() {
 
   // 1. GearConfig Registry & findGear tests
   console.log("--- 1. GearConfig Registry & findGear ---");
+
+  await runTest("Gear config is loaded from the test fixture, not ~/.pi", () => {
+    assert.equal(getAgentDir(), FIXTURE_AGENT_DIR);
+  });
 
   await runTest("GEARS contains gears from config or defaults", () => {
     assert.ok(GEARS.length >= 2, "Should have at least 2 gears");
