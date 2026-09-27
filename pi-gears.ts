@@ -79,7 +79,7 @@ export function loadGearsConfigFile(cwd?: string): { gears: GearConfig[]; interc
 
 	if (customGears.length === 0) {
 		throw new Error(
-			"gears.json not found. Copy gears.example.json to ~/.pi/agent/ or project root and customize providers/models."
+			"gears.json not found. Copy gears.json.example to ~/.pi/agent/gears.json or <project>/.pi/gears.json and customize providers/models."
 		);
 	}
 

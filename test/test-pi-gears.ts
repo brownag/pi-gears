@@ -281,6 +281,33 @@ async function main() {
     assert.ok(updated.providers["apu-embeddings"]);
   });
 
+  await runTest("Installer seeds gears.json from example but never overwrites an existing one", async () => {
+    setupSandbox();
+    const gearsJsonPath = path.join(sandboxDir, "gears.json");
+    const userConfig = JSON.stringify({ gears: [{ id: 9, name: "mine" }] }) + "\n";
+    fs.writeFileSync(gearsJsonPath, userConfig, "utf-8");
+
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: false,
+    });
+
+    assert.equal(fs.readFileSync(gearsJsonPath, "utf-8"), userConfig, "existing gears.json must be left untouched");
+
+    fs.rmSync(gearsJsonPath);
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: false,
+    });
+
+    const example = fs.readFileSync(path.join(projectRoot, "gears.json.example"), "utf-8");
+    assert.equal(fs.readFileSync(gearsJsonPath, "utf-8"), example, "gears.json should be seeded from gears.json.example");
+  });
+
   await runTest("Installer execution with symlink mode (--custom-target --symlink)", async () => {
     setupSandbox();
 

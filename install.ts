@@ -3,7 +3,7 @@
  * pi-gears installer script
  *
  * Augments target models.json with local providers (r9700, cpu-llama) and deploys
- * pi-gears.ts & gears.json to global (~/.pi/agent/) or project-local (<project>/.pi/) scopes.
+ * pi-gears.ts and seeds gears.json (from gears.json.example, if absent) to global (~/.pi/agent/) or project-local (<project>/.pi/) scopes.
  */
 
 import * as fs from "node:fs";
@@ -218,10 +218,10 @@ export async function runInstaller(options: InstallOptions) {
     fs.rmSync(legacyFlatInterceptorsPath, { force: true });
   }
 
-  // Locate source pi-gears.ts, interceptors.ts, and gears.json
+  // Locate source pi-gears.ts, interceptors.ts, and gears.json.example
   let sourceExtensionPath = path.join(__dirname, "pi-gears.ts");
   let sourceInterceptorsPath = path.join(__dirname, "interceptors.ts");
-  let sourceGearsJsonPath = path.join(__dirname, "gears.json");
+  let sourceGearsJsonPath = path.join(__dirname, "gears.json.example");
   if (!fs.existsSync(sourceExtensionPath)) {
     sourceExtensionPath = path.join(process.cwd(), "pi-gears.ts");
   }
@@ -229,7 +229,7 @@ export async function runInstaller(options: InstallOptions) {
     sourceInterceptorsPath = path.join(process.cwd(), "interceptors.ts");
   }
   if (!fs.existsSync(sourceGearsJsonPath)) {
-    sourceGearsJsonPath = path.join(process.cwd(), "gears.json");
+    sourceGearsJsonPath = path.join(process.cwd(), "gears.json.example");
   }
 
   if (!fs.existsSync(sourceExtensionPath)) {
@@ -260,7 +260,11 @@ export async function runInstaller(options: InstallOptions) {
     console.log("\n[Dry Run] Proposed models.json content:\n----------------------------------------");
     console.log(updatedJsonStr);
     console.log("----------------------------------------");
-    console.log(`[Dry Run] Would copy / symlink gears.json -> ${gearsJsonPath}`);
+    if (fs.existsSync(gearsJsonPath)) {
+      console.log(`[Dry Run] Would keep existing gears.json at ${gearsJsonPath}`);
+    } else {
+      console.log(`[Dry Run] Would seed ${gearsJsonPath} from ${sourceGearsJsonPath}`);
+    }
     console.log(`[Dry Run] Would ensure directory exists: ${packageExtensionsDir}`);
     console.log(`[Dry Run] Would ${symlink ? "symlink" : "copy"} ${sourceExtensionPath} -> ${targetExtensionPath}`);
     console.log(`[Dry Run] Would ${symlink ? "symlink" : "copy"} ${sourceInterceptorsPath} -> ${targetInterceptorsPath}`);
@@ -279,10 +283,12 @@ export async function runInstaller(options: InstallOptions) {
   fs.writeFileSync(modelsJsonPath, updatedJsonStr, "utf-8");
   console.log(`[Success] Updated models.json with r9700 and cpu-llama gear models.`);
 
-  // Deploy gears.json
-  if (fs.existsSync(sourceGearsJsonPath)) {
+  // Seed gears.json from the example, never overwriting a user's existing config
+  if (fs.existsSync(gearsJsonPath)) {
+    console.log(`[Skip] Keeping existing gears configuration: ${gearsJsonPath}`);
+  } else if (fs.existsSync(sourceGearsJsonPath)) {
     fs.copyFileSync(sourceGearsJsonPath, gearsJsonPath);
-    console.log(`[Success] Deployed gears configuration to: ${gearsJsonPath}`);
+    console.log(`[Success] Seeded gears configuration from example: ${gearsJsonPath} (edit providers/models to match models.json)`);
   }
 
   fs.mkdirSync(packageExtensionsDir, { recursive: true });

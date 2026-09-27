@@ -40,18 +40,18 @@ npx tsx install.ts --project /path/to/your/project --symlink
 npx tsx install.ts --dry-run
 ```
 
-The installer merges model definitions into `models.json` and deploys the extension files.
+The installer merges model definitions into `models.json`, deploys the extension files, and seeds `gears.json` from `gears.json.example` if you don't already have one.
 
-### Step 3: Copy and Customize `gears.example.json`
+### Step 3: Customize `gears.json`
 
-Copy the generic example to create your personal configuration:
+If you skipped the installer or want a fresh copy, copy the generic example yourself:
 
 ```bash
 # Copy to global Pi agent directory
-cp gears.example.json ~/.pi/agent/gears.json
+cp gears.json.example ~/.pi/agent/gears.json
 
 # Or copy to your project's `.pi/` directory
-cp gears.example.json .pi/gears.json
+cp gears.json.example .pi/gears.json
 ```
 
 Then edit `gears.json` to match your actual provider and model names:
@@ -75,7 +75,7 @@ Then edit `gears.json` to match your actual provider and model names:
 }
 ```
 
-**Important:** The `gears.example.json` file in the repository remains generic (using placeholder names like `gpu`, `cpu`, `large-reasoning`, `medium-fast`). It is safe to commit. Your personal `gears.json` is in `.gitignore` and will not be tracked by git.
+**Important:** The `gears.json.example` file in the repository remains generic (using placeholder names like `gpu`, `cpu`, `large-reasoning`, `medium-fast`). It is safe to commit. Your personal `gears.json` is in `.gitignore` and will not be tracked by git.
 
 ### Step 4: Run `/gear` to Switch Gears
 
@@ -267,7 +267,7 @@ The installer:
 - Merges models without dropping existing providers.
 - Writes a `models.json.bak` backup file first.
 - Copies or symlinks `pi-gears.ts` and `interceptors.ts` to `extensions/`.
-- Deploys `gears.example.json` (you then customize to create `gears.json`).
+- Seeds `gears.json` from `gears.json.example` if the target has none. An existing `gears.json` is never overwritten.
 
 ## Tests
 
