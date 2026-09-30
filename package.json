@@ -10,7 +10,7 @@
     "install:symlink": "tsx install.ts --global --symlink"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-coding-agent": "^0.99.1",
     "@earendil-works/pi-tui": "^0.85.1",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
