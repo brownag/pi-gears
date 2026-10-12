@@ -311,6 +311,47 @@ async function main() {
     assert.ok(!fs.existsSync(path.join(sandboxDir, "extensions")), "extensions dir should not be created");
   });
 
+  function seedLegacyFlatFiles() {
+    const extensionsDir = path.join(sandboxDir, "extensions");
+    fs.mkdirSync(extensionsDir, { recursive: true });
+    fs.writeFileSync(path.join(extensionsDir, "pi-gears.ts"), "// legacy\n", "utf-8");
+    fs.writeFileSync(path.join(extensionsDir, "interceptors.ts"), "// legacy\n", "utf-8");
+  }
+
+  await runTest("Installer dry-run leaves legacy extension files in place", async () => {
+    setupSandbox();
+    seedLegacyFlatFiles();
+
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: true,
+    });
+
+    assert.ok(fs.existsSync(path.join(sandboxDir, "extensions", "pi-gears.ts")), "legacy pi-gears.ts must survive dry-run");
+    assert.ok(fs.existsSync(path.join(sandboxDir, "extensions", "interceptors.ts")), "legacy interceptors.ts must survive dry-run");
+  });
+
+  await runTest("Installer live mode removes legacy flat extension files", async () => {
+    setupSandbox();
+    seedLegacyFlatFiles();
+
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: false,
+    });
+
+    assert.ok(!fs.existsSync(path.join(sandboxDir, "extensions", "pi-gears.ts")), "legacy pi-gears.ts must be removed in live mode");
+    assert.ok(!fs.existsSync(path.join(sandboxDir, "extensions", "interceptors.ts")), "legacy interceptors.ts must be removed in live mode");
+    assert.ok(fs.existsSync(path.join(sandboxDir, "extensions", "pi-gears", "index.ts")), "extensions/pi-gears/index.ts should exist");
+  });
+
+  // Reset the sandbox so a test run leaves the tracked tree clean (only models.json is tracked)
+  setupSandbox();
+
   // 6. Tool Interceptor Registry & Subagent Propagation Tests
   console.log("\n--- 6. Tool Interceptor Registry & Subagent Propagation ---");
 

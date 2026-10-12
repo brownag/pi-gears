@@ -117,15 +117,8 @@ export async function runInstaller(options: InstallOptions) {
   const targetExtensionPath = path.join(packageExtensionsDir, "index.ts");
   const targetInterceptorsPath = path.join(packageExtensionsDir, "interceptors.ts");
 
-  // Clean up legacy flat extension file if present
   const legacyFlatExtensionPath = path.join(extensionsDir, "pi-gears.ts");
   const legacyFlatInterceptorsPath = path.join(extensionsDir, "interceptors.ts");
-  if (fs.existsSync(legacyFlatExtensionPath)) {
-    fs.rmSync(legacyFlatExtensionPath, { force: true });
-  }
-  if (fs.existsSync(legacyFlatInterceptorsPath)) {
-    fs.rmSync(legacyFlatInterceptorsPath, { force: true });
-  }
 
   // Locate source pi-gears.ts, interceptors.ts, and gears.json.example
   let sourceExtensionPath = path.join(__dirname, "pi-gears.ts");
@@ -149,6 +142,11 @@ export async function runInstaller(options: InstallOptions) {
   }
 
   if (dryRun) {
+    for (const legacyPath of [legacyFlatExtensionPath, legacyFlatInterceptorsPath]) {
+      if (fs.existsSync(legacyPath)) {
+        console.log(`[Dry Run] Would remove legacy file ${legacyPath}`);
+      }
+    }
     if (fs.existsSync(gearsJsonPath)) {
       console.log(`[Dry Run] Would keep existing gears.json at ${gearsJsonPath}`);
     } else {
@@ -162,6 +160,13 @@ export async function runInstaller(options: InstallOptions) {
   }
 
   // Live execution
+  // Clean up legacy flat extension file if present
+  if (fs.existsSync(legacyFlatExtensionPath)) {
+    fs.rmSync(legacyFlatExtensionPath, { force: true });
+  }
+  if (fs.existsSync(legacyFlatInterceptorsPath)) {
+    fs.rmSync(legacyFlatInterceptorsPath, { force: true });
+  }
   fs.mkdirSync(targetDir, { recursive: true });
 
   // Seed gears.json from the example, never overwriting a user's existing config
