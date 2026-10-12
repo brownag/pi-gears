@@ -2,7 +2,7 @@
  * pi-gears: Cognitive Execution Transmission for Pi Coding Agent
  *
  * Exposes a structured, configurable Gear registry enabling cognitive execution gear shifting
- * across local llama-server profiles (e.g. GPU R9700, CPU Flash, remote/cluster nodes).
+ * across local llama-server profiles (e.g. a GPU server, a CPU server, remote/cluster nodes).
  *
  * Configuration:
  * - ~/.pi/agent/gears.json (global)
@@ -314,7 +314,6 @@ export default function piGearsExtension(pi: ExtensionAPI) {
 		const modelStr = typeof payload.model === "string" ? payload.model : "";
 		const matchesGearProvider =
 			Boolean(activeProvider && modelStr.startsWith(`${activeProvider}/`)) ||
-			modelStr.startsWith("qwen-gear-") ||
 			ctx.model?.provider === activeProvider;
 
 		if (matchesGearProvider && activeGear) {

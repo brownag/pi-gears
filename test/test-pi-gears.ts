@@ -100,7 +100,7 @@ async function main() {
   });
 
   await runTest("findGear by exact and case-insensitive name / aliases", () => {
-    assert.equal(findGear("r9700-plan")?.id, 1);
+    assert.equal(findGear("gpu-plan")?.id, 1);
     assert.equal(findGear("plan")?.id, 1);
     assert.equal(findGear("PLAN")?.id, 1);
     assert.equal(findGear("exec")?.id, 2);
@@ -138,12 +138,12 @@ async function main() {
   await runTest("Payload hook modifies temperature and enable_thinking for Gear 1", () => {
     const gear = findGear(1)!;
     const payload: Record<string, unknown> = {
-      model: `${gear.provider}/qwen-gear-1`,
+      model: `${gear.provider}/${gear.model}`,
       messages: [{ role: "user", content: "hello" }],
     };
 
     const modelStr = typeof payload.model === "string" ? payload.model : "";
-    const matchesProvider = modelStr.startsWith(`${gear.provider}/`) || modelStr.startsWith("qwen-gear-");
+    const matchesProvider = modelStr.startsWith(`${gear.provider}/`);
     assert.ok(matchesProvider);
 
     payload.temperature = gear.temperature;
@@ -163,12 +163,12 @@ async function main() {
   await runTest("Payload hook modifies temperature and enable_thinking for Gear 2", () => {
     const gear = findGear(2)!;
     const payload: Record<string, unknown> = {
-      model: `${gear.provider}/qwen-gear-2`,
+      model: `${gear.provider}/${gear.model}`,
       messages: [{ role: "user", content: "hello" }],
     };
 
     const modelStr = typeof payload.model === "string" ? payload.model : "";
-    const matchesProvider = modelStr.startsWith(`${gear.provider}/`) || modelStr.startsWith("qwen-gear-");
+    const matchesProvider = modelStr.startsWith(`${gear.provider}/`);
     assert.ok(matchesProvider);
 
     payload.temperature = gear.temperature;
@@ -357,13 +357,13 @@ async function main() {
   console.log("\n--- 6. Tool Interceptor Registry & Subagent Propagation ---");
 
   await runTest("hasExplicitThinkingSuffix detects explicit suffixes and ignores clean model IDs", () => {
-    assert.ok(hasExplicitThinkingSuffix("r9700/qwen-gear-1:high"));
-    assert.ok(hasExplicitThinkingSuffix("cpu-llama/qwen-gear-2:off"));
+    assert.ok(hasExplicitThinkingSuffix("gpu/large-reasoning:high"));
+    assert.ok(hasExplicitThinkingSuffix("cpu/medium-fast:off"));
     assert.ok(hasExplicitThinkingSuffix("some-model:none"));
     assert.ok(hasExplicitThinkingSuffix("custom:low"));
     assert.ok(hasExplicitThinkingSuffix("custom:medium"));
-    assert.ok(!hasExplicitThinkingSuffix("r9700/qwen-gear-1"));
-    assert.ok(!hasExplicitThinkingSuffix("cpu-llama/qwen-gear-2"));
+    assert.ok(!hasExplicitThinkingSuffix("gpu/large-reasoning"));
+    assert.ok(!hasExplicitThinkingSuffix("cpu/medium-fast"));
     assert.ok(!hasExplicitThinkingSuffix("model-with-colon:unknown"));
   });
 
@@ -458,7 +458,7 @@ async function main() {
   });
 
   await runTest("Target agent filtering: patches worker/reviewer but leaves explorer unmodified", async () => {
-    const gear = findGear(1)!; // Gear 1 is r9700/qwen-gear-1, thinking: true
+    const gear = findGear(1)!; // Gear 1 is gpu/large-reasoning, thinking: true
 
     const workerInput: SubagentTaskInput = { agent: "worker", task: "code something" };
     const reviewerInput: SubagentTaskInput = { agent: "reviewer", task: "review something" };
@@ -478,13 +478,13 @@ async function main() {
     await executeToolInterceptors("subagent", reviewerInput, ctx, [subagentInterceptor]);
     await executeToolInterceptors("subagent", explorerInput, ctx, [subagentInterceptor]);
 
-    assert.equal(workerInput.model, "r9700/qwen-gear-1:high", "worker should be patched with gear model + :high");
-    assert.equal(reviewerInput.model, "r9700/qwen-gear-1:high", "reviewer should be patched with gear model + :high");
+    assert.equal(workerInput.model, "gpu/large-reasoning:high", "worker should be patched with gear model + :high");
+    assert.equal(reviewerInput.model, "gpu/large-reasoning:high", "reviewer should be patched with gear model + :high");
     assert.equal(explorerInput.model, undefined, "explorer should remain unpatched");
   });
 
   await runTest("Target agent filtering: wildcard * matches any agent name", async () => {
-    const gear = findGear(2)!; // Gear 2 is r9700/qwen-gear-2, thinking: false
+    const gear = findGear(2)!; // Gear 2 is gpu/medium-fast, thinking: false
 
     const customInput: SubagentTaskInput = { agent: "any-custom-agent", task: "do something" };
     const ctx = {
@@ -498,7 +498,7 @@ async function main() {
     };
 
     await executeToolInterceptors("subagent", customInput, ctx, [subagentInterceptor]);
-    assert.equal(customInput.model, "r9700/qwen-gear-2:off", "Wildcard should patch any-custom-agent");
+    assert.equal(customInput.model, "gpu/medium-fast:off", "Wildcard should patch any-custom-agent");
   });
 
   await runTest("Per-gear override test: gear-specific interceptors config overrides global defaults", async () => {
@@ -524,11 +524,11 @@ async function main() {
     await executeToolInterceptors("subagent", coderInput, ctx, [subagentInterceptor]);
 
     assert.equal(workerInput.model, undefined, "worker should NOT be patched because per-gear config overrides targetAgents");
-    assert.equal(coderInput.model, "r9700/qwen-gear-1:high", "coder should be patched per gear override");
+    assert.equal(coderInput.model, "gpu/large-reasoning:high", "coder should be patched per gear override");
   });
 
   await runTest("Subagent interceptor patches parallel and chain dispatch arrays", async () => {
-    const gear = findGear(2)!; // Gear 2: r9700/qwen-gear-2, thinking: false (:off)
+    const gear = findGear(2)!; // Gear 2: gpu/medium-fast, thinking: false (:off)
 
     const parallelInput: { parallel: SubagentTaskInput[] } = {
       parallel: [
@@ -553,12 +553,12 @@ async function main() {
     await executeToolInterceptors("subagent", parallelInput, ctx, [subagentInterceptor]);
     await executeToolInterceptors("subagent", chainInput, ctx, [subagentInterceptor]);
 
-    assert.equal(parallelInput.parallel[0].model, "r9700/qwen-gear-2:off");
+    assert.equal(parallelInput.parallel[0].model, "gpu/medium-fast:off");
     assert.equal(parallelInput.parallel[1].model, undefined, "explorer is not in default targetAgents");
-    assert.equal(parallelInput.parallel[2].model, "r9700/qwen-gear-2:off");
+    assert.equal(parallelInput.parallel[2].model, "gpu/medium-fast:off");
 
-    assert.equal(chainInput.chain[0].model, "r9700/qwen-gear-2:off");
-    assert.equal(chainInput.chain[1].model, "r9700/qwen-gear-2:off");
+    assert.equal(chainInput.chain[0].model, "gpu/medium-fast:off");
+    assert.equal(chainInput.chain[1].model, "gpu/medium-fast:off");
   });
 
   // Summary
