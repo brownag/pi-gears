@@ -31,10 +31,7 @@ import {
 } from "../interceptors.js";
 
 import {
-  GEAR_MODELS,
-  CPU_LLAMA_PROVIDER,
   parseArgs,
-  mergeModelsConfig,
   runInstaller,
 } from "../install.js";
 
@@ -195,52 +192,17 @@ async function main() {
     assert.equal(opts.dryRun, true);
   });
 
-  await runTest("mergeModelsConfig handles null or empty existing config", () => {
-    const { updatedConfig } = mergeModelsConfig(null);
-    assert.ok(updatedConfig.providers);
-    const providers = updatedConfig.providers as Record<string, unknown>;
-    assert.ok(providers["r9700"]);
-    assert.ok(providers["cpu-llama"]);
-  });
-
-  await runTest("mergeModelsConfig preserves existing multi-provider configurations", () => {
-    const mockExisting = JSON.stringify({
-      providers: {
-        r9700: {
-          baseUrl: "http://127.0.0.1:8001/v1",
-          api: "openai-completions",
-          models: [{ id: "existing-model", name: "Existing Model" }],
-        },
-        "apu-embeddings": {
-          baseUrl: "http://127.0.0.1:8080/v1",
-          api: "openai-embeddings",
-        },
-      },
-    });
-
-    const { updatedConfig } = mergeModelsConfig(mockExisting);
-    const providers = updatedConfig.providers as Record<string, any>;
-    assert.ok(providers["r9700"], "r9700 provider must be preserved");
-    assert.ok(providers["apu-embeddings"], "apu-embeddings provider must be preserved");
-    assert.ok(providers["cpu-llama"], "cpu-llama provider must be added");
-
-    // r9700 should have existing-model + qwen-gear-1 + qwen-gear-2
-    assert.ok(providers["r9700"].models.some((m: any) => m.id === "existing-model"));
-    assert.ok(providers["r9700"].models.some((m: any) => m.id === "qwen-gear-1"));
-    assert.ok(providers["r9700"].models.some((m: any) => m.id === "qwen-gear-2"));
-  });
-
   // 5. Sandboxed Installer Integration Tests
   console.log("\n--- 5. Sandboxed Installer Integration Tests ---");
 
   const mockExistingConfig = {
     providers: {
-      r9700: {
+      gpu: {
         baseUrl: "http://127.0.0.1:8001/v1",
         api: "openai-completions",
         models: [{ id: "deepseek-coder", name: "DeepSeek Coder" }],
       },
-      "apu-embeddings": {
+      embeddings: {
         baseUrl: "http://127.0.0.1:8080/v1",
         api: "openai-embeddings",
         models: [{ id: "nomic-embed-text", name: "Nomic Embed" }],
@@ -255,8 +217,11 @@ async function main() {
     fs.writeFileSync(modelsPath, JSON.stringify(mockExistingConfig, null, 2) + "\n", "utf-8");
   }
 
-  await runTest("Installer execution with copy mode (--custom-target)", async () => {
+  await runTest("Installer copy mode deploys files and leaves models.json untouched", async () => {
     setupSandbox();
+    const modelsJsonPath = path.join(sandboxDir, "models.json");
+    const modelsJsonBakPath = path.join(sandboxDir, "models.json.bak");
+    const originalModelsJson = fs.readFileSync(modelsJsonPath, "utf-8");
 
     await runInstaller({
       targetDir: sandboxDir,
@@ -265,14 +230,12 @@ async function main() {
       dryRun: false,
     });
 
-    const modelsJsonPath = path.join(sandboxDir, "models.json");
-    const modelsJsonBakPath = path.join(sandboxDir, "models.json.bak");
     const deployedExtensionPath = path.join(sandboxDir, "extensions", "pi-gears", "index.ts");
     const deployedInterceptorsPath = path.join(sandboxDir, "extensions", "pi-gears", "interceptors.ts");
     const deployedGearsJsonPath = path.join(sandboxDir, "gears.json");
 
-    assert.ok(fs.existsSync(modelsJsonPath), "models.json should exist");
-    assert.ok(fs.existsSync(modelsJsonBakPath), "models.json.bak should exist");
+    assert.equal(fs.readFileSync(modelsJsonPath, "utf-8"), originalModelsJson, "models.json must be byte-identical after install");
+    assert.ok(!fs.existsSync(modelsJsonBakPath), "models.json.bak must not be created");
     assert.ok(fs.existsSync(deployedExtensionPath), "extensions/pi-gears/index.ts should exist");
     assert.ok(fs.existsSync(deployedInterceptorsPath), "extensions/pi-gears/interceptors.ts should exist");
     assert.ok(fs.existsSync(deployedGearsJsonPath), "gears.json should exist");
@@ -281,11 +244,6 @@ async function main() {
     const statInterceptors = fs.lstatSync(deployedInterceptorsPath);
     assert.ok(!stat.isSymbolicLink(), "pi-gears/index.ts should be regular copied file");
     assert.ok(!statInterceptors.isSymbolicLink(), "pi-gears/interceptors.ts should be regular copied file");
-
-    const updated = JSON.parse(fs.readFileSync(modelsJsonPath, "utf-8"));
-    assert.ok(updated.providers.r9700);
-    assert.ok(updated.providers["cpu-llama"]);
-    assert.ok(updated.providers["apu-embeddings"]);
   });
 
   await runTest("Installer seeds gears.json from example but never overwrites an existing one", async () => {
