@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "pi-gears"
+type: software
+authors:
+  - family-names: Brown
+    given-names: Andrew
+    email: brown.andrewg@gmail.com
+    orcid: "https://orcid.org/0000-0002-4565-533X"
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/brownag/pi-gears"
