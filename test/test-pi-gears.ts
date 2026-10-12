@@ -117,6 +117,71 @@ async function main() {
     assert.equal(findGear(""), undefined);
   });
 
+  // 1b. Config file loading
+  console.log("\n--- 1b. Config file loading ---");
+
+  await runTest("loadGearsConfigFile throws when no gears.json exists", () => {
+    const originalEnv = process.env.PI_CODING_AGENT_DIR;
+    const originalCwd = process.cwd();
+    const base = path.join(sandboxDir, "config-loading");
+    const agentDir = path.join(base, "agent");
+    const workDir = path.join(base, "work");
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(workDir, { recursive: true });
+    try {
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+      process.chdir(workDir);
+      assert.throws(() => loadGearsConfigFile(workDir), /gears\.json not found/);
+    } finally {
+      process.chdir(originalCwd);
+      if (originalEnv === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalEnv;
+      }
+      fs.rmSync(base, { recursive: true, force: true });
+      assert.ok(!fs.existsSync(base), "config-loading dir should be removed");
+    }
+  });
+
+  await runTest("loadGearsConfigFile uses the first config found and does not merge", () => {
+    const originalEnv = process.env.PI_CODING_AGENT_DIR;
+    const originalCwd = process.cwd();
+    const base = path.join(sandboxDir, "config-loading");
+    const agentDir = path.join(base, "agent");
+    const workDir = path.join(base, "work");
+    const projectConfigDir = path.join(workDir, ".pi");
+    const fixtureGear = JSON.parse(fs.readFileSync(path.join(FIXTURE_AGENT_DIR, "gears.json"), "utf-8")).gears[0];
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    try {
+      fs.writeFileSync(path.join(agentDir, "gears.json"), JSON.stringify({ gears: [{ ...fixtureGear, name: "from-agent-dir" }] }));
+      fs.writeFileSync(path.join(projectConfigDir, "gears.json"), JSON.stringify({ gears: [{ ...fixtureGear, name: "from-project" }] }));
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+      process.chdir(workDir);
+
+      const first = loadGearsConfigFile(workDir).gears;
+      assert.equal(first.length, 1);
+      assert.equal(first[0].name, "from-agent-dir");
+
+      fs.rmSync(path.join(agentDir, "gears.json"));
+      const second = loadGearsConfigFile(workDir).gears;
+      assert.equal(second.length, 1);
+      assert.equal(second[0].name, "from-project");
+    } finally {
+      process.chdir(originalCwd);
+      if (originalEnv === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalEnv;
+      }
+      fs.rmSync(base, { recursive: true, force: true });
+      assert.ok(!fs.existsSync(base), "config-loading dir should be removed");
+    }
+  });
+
   // 2. buildGearDescription
   console.log("\n--- 2. buildGearDescription ---");
 
