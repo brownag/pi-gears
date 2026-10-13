@@ -1,6 +1,6 @@
 {
   "providers": {
-    "r9700": {
+    "gpu": {
       "baseUrl": "http://127.0.0.1:8001/v1",
       "api": "openai-completions",
       "models": [
@@ -10,7 +10,7 @@
         }
       ]
     },
-    "apu-embeddings": {
+    "embeddings": {
       "baseUrl": "http://127.0.0.1:8080/v1",
       "api": "openai-embeddings",
       "models": [

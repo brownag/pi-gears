@@ -1,14 +1,17 @@
 /**
  * Test Suite for pi-gears: extension logic, gear registry, and sandboxed installer.
  *
- * Strict constraint: Zero modifications to ~/.pi.
- * All tests operate purely in-memory or within test-sandbox/.
+ * Strict constraint: Zero reads or writes of ~/.pi.
+ * Config comes from test/fixtures/agent/ (see setup-env.ts); installer tests write only to test-sandbox/.
  */
+
+import { FIXTURE_AGENT_DIR } from "./setup-env.js";
 
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 import {
   GEARS,
@@ -28,10 +31,7 @@ import {
 } from "../interceptors.js";
 
 import {
-  GEAR_MODELS,
-  CPU_LLAMA_PROVIDER,
   parseArgs,
-  mergeModelsConfig,
   runInstaller,
 } from "../install.js";
 
@@ -39,6 +39,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const sandboxDir = path.resolve(projectRoot, "test-sandbox");
+
+/** Subagent tool input; `model` is filled in by the interceptor. */
+type SubagentTaskInput = { agent: string; task: string; model?: string };
 
 let passed = 0;
 let failed = 0;
@@ -62,6 +65,10 @@ async function main() {
 
   // 1. GearConfig Registry & findGear tests
   console.log("--- 1. GearConfig Registry & findGear ---");
+
+  await runTest("Gear config is loaded from the test fixture, not ~/.pi", () => {
+    assert.equal(getAgentDir(), FIXTURE_AGENT_DIR);
+  });
 
   await runTest("GEARS contains gears from config or defaults", () => {
     assert.ok(GEARS.length >= 2, "Should have at least 2 gears");
@@ -90,7 +97,7 @@ async function main() {
   });
 
   await runTest("findGear by exact and case-insensitive name / aliases", () => {
-    assert.equal(findGear("r9700-plan")?.id, 1);
+    assert.equal(findGear("gpu-plan")?.id, 1);
     assert.equal(findGear("plan")?.id, 1);
     assert.equal(findGear("PLAN")?.id, 1);
     assert.equal(findGear("exec")?.id, 2);
@@ -108,6 +115,71 @@ async function main() {
     assert.equal(findGear("turbo"), undefined);
     assert.equal(findGear("99"), undefined);
     assert.equal(findGear(""), undefined);
+  });
+
+  // 1b. Config file loading
+  console.log("\n--- 1b. Config file loading ---");
+
+  await runTest("loadGearsConfigFile throws when no gears.json exists", () => {
+    const originalEnv = process.env.PI_CODING_AGENT_DIR;
+    const originalCwd = process.cwd();
+    const base = path.join(sandboxDir, "config-loading");
+    const agentDir = path.join(base, "agent");
+    const workDir = path.join(base, "work");
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(workDir, { recursive: true });
+    try {
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+      process.chdir(workDir);
+      assert.throws(() => loadGearsConfigFile(workDir), /gears\.json not found/);
+    } finally {
+      process.chdir(originalCwd);
+      if (originalEnv === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalEnv;
+      }
+      fs.rmSync(base, { recursive: true, force: true });
+      assert.ok(!fs.existsSync(base), "config-loading dir should be removed");
+    }
+  });
+
+  await runTest("loadGearsConfigFile uses the first config found and does not merge", () => {
+    const originalEnv = process.env.PI_CODING_AGENT_DIR;
+    const originalCwd = process.cwd();
+    const base = path.join(sandboxDir, "config-loading");
+    const agentDir = path.join(base, "agent");
+    const workDir = path.join(base, "work");
+    const projectConfigDir = path.join(workDir, ".pi");
+    const fixtureGear = JSON.parse(fs.readFileSync(path.join(FIXTURE_AGENT_DIR, "gears.json"), "utf-8")).gears[0];
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    try {
+      fs.writeFileSync(path.join(agentDir, "gears.json"), JSON.stringify({ gears: [{ ...fixtureGear, name: "from-agent-dir" }] }));
+      fs.writeFileSync(path.join(projectConfigDir, "gears.json"), JSON.stringify({ gears: [{ ...fixtureGear, name: "from-project" }] }));
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+      process.chdir(workDir);
+
+      const first = loadGearsConfigFile(workDir).gears;
+      assert.equal(first.length, 1);
+      assert.equal(first[0].name, "from-agent-dir");
+
+      fs.rmSync(path.join(agentDir, "gears.json"));
+      const second = loadGearsConfigFile(workDir).gears;
+      assert.equal(second.length, 1);
+      assert.equal(second[0].name, "from-project");
+    } finally {
+      process.chdir(originalCwd);
+      if (originalEnv === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalEnv;
+      }
+      fs.rmSync(base, { recursive: true, force: true });
+      assert.ok(!fs.existsSync(base), "config-loading dir should be removed");
+    }
   });
 
   // 2. buildGearDescription
@@ -128,12 +200,12 @@ async function main() {
   await runTest("Payload hook modifies temperature and enable_thinking for Gear 1", () => {
     const gear = findGear(1)!;
     const payload: Record<string, unknown> = {
-      model: `${gear.provider}/qwen-gear-1`,
+      model: `${gear.provider}/${gear.model}`,
       messages: [{ role: "user", content: "hello" }],
     };
 
     const modelStr = typeof payload.model === "string" ? payload.model : "";
-    const matchesProvider = modelStr.startsWith(`${gear.provider}/`) || modelStr.startsWith("qwen-gear-");
+    const matchesProvider = modelStr.startsWith(`${gear.provider}/`);
     assert.ok(matchesProvider);
 
     payload.temperature = gear.temperature;
@@ -153,12 +225,12 @@ async function main() {
   await runTest("Payload hook modifies temperature and enable_thinking for Gear 2", () => {
     const gear = findGear(2)!;
     const payload: Record<string, unknown> = {
-      model: `${gear.provider}/qwen-gear-2`,
+      model: `${gear.provider}/${gear.model}`,
       messages: [{ role: "user", content: "hello" }],
     };
 
     const modelStr = typeof payload.model === "string" ? payload.model : "";
-    const matchesProvider = modelStr.startsWith(`${gear.provider}/`) || modelStr.startsWith("qwen-gear-");
+    const matchesProvider = modelStr.startsWith(`${gear.provider}/`);
     assert.ok(matchesProvider);
 
     payload.temperature = gear.temperature;
@@ -185,52 +257,17 @@ async function main() {
     assert.equal(opts.dryRun, true);
   });
 
-  await runTest("mergeModelsConfig handles null or empty existing config", () => {
-    const { updatedConfig } = mergeModelsConfig(null);
-    assert.ok(updatedConfig.providers);
-    const providers = updatedConfig.providers as Record<string, unknown>;
-    assert.ok(providers["r9700"]);
-    assert.ok(providers["cpu-llama"]);
-  });
-
-  await runTest("mergeModelsConfig preserves existing multi-provider configurations", () => {
-    const mockExisting = JSON.stringify({
-      providers: {
-        r9700: {
-          baseUrl: "http://127.0.0.1:8001/v1",
-          api: "openai-completions",
-          models: [{ id: "existing-model", name: "Existing Model" }],
-        },
-        "apu-embeddings": {
-          baseUrl: "http://127.0.0.1:8080/v1",
-          api: "openai-embeddings",
-        },
-      },
-    });
-
-    const { updatedConfig } = mergeModelsConfig(mockExisting);
-    const providers = updatedConfig.providers as Record<string, any>;
-    assert.ok(providers["r9700"], "r9700 provider must be preserved");
-    assert.ok(providers["apu-embeddings"], "apu-embeddings provider must be preserved");
-    assert.ok(providers["cpu-llama"], "cpu-llama provider must be added");
-
-    // r9700 should have existing-model + qwen-gear-1 + qwen-gear-2
-    assert.ok(providers["r9700"].models.some((m: any) => m.id === "existing-model"));
-    assert.ok(providers["r9700"].models.some((m: any) => m.id === "qwen-gear-1"));
-    assert.ok(providers["r9700"].models.some((m: any) => m.id === "qwen-gear-2"));
-  });
-
   // 5. Sandboxed Installer Integration Tests
   console.log("\n--- 5. Sandboxed Installer Integration Tests ---");
 
   const mockExistingConfig = {
     providers: {
-      r9700: {
+      gpu: {
         baseUrl: "http://127.0.0.1:8001/v1",
         api: "openai-completions",
         models: [{ id: "deepseek-coder", name: "DeepSeek Coder" }],
       },
-      "apu-embeddings": {
+      embeddings: {
         baseUrl: "http://127.0.0.1:8080/v1",
         api: "openai-embeddings",
         models: [{ id: "nomic-embed-text", name: "Nomic Embed" }],
@@ -245,8 +282,11 @@ async function main() {
     fs.writeFileSync(modelsPath, JSON.stringify(mockExistingConfig, null, 2) + "\n", "utf-8");
   }
 
-  await runTest("Installer execution with copy mode (--custom-target)", async () => {
+  await runTest("Installer copy mode deploys files and leaves models.json untouched", async () => {
     setupSandbox();
+    const modelsJsonPath = path.join(sandboxDir, "models.json");
+    const modelsJsonBakPath = path.join(sandboxDir, "models.json.bak");
+    const originalModelsJson = fs.readFileSync(modelsJsonPath, "utf-8");
 
     await runInstaller({
       targetDir: sandboxDir,
@@ -255,14 +295,12 @@ async function main() {
       dryRun: false,
     });
 
-    const modelsJsonPath = path.join(sandboxDir, "models.json");
-    const modelsJsonBakPath = path.join(sandboxDir, "models.json.bak");
     const deployedExtensionPath = path.join(sandboxDir, "extensions", "pi-gears", "index.ts");
     const deployedInterceptorsPath = path.join(sandboxDir, "extensions", "pi-gears", "interceptors.ts");
     const deployedGearsJsonPath = path.join(sandboxDir, "gears.json");
 
-    assert.ok(fs.existsSync(modelsJsonPath), "models.json should exist");
-    assert.ok(fs.existsSync(modelsJsonBakPath), "models.json.bak should exist");
+    assert.equal(fs.readFileSync(modelsJsonPath, "utf-8"), originalModelsJson, "models.json must be byte-identical after install");
+    assert.ok(!fs.existsSync(modelsJsonBakPath), "models.json.bak must not be created");
     assert.ok(fs.existsSync(deployedExtensionPath), "extensions/pi-gears/index.ts should exist");
     assert.ok(fs.existsSync(deployedInterceptorsPath), "extensions/pi-gears/interceptors.ts should exist");
     assert.ok(fs.existsSync(deployedGearsJsonPath), "gears.json should exist");
@@ -271,11 +309,33 @@ async function main() {
     const statInterceptors = fs.lstatSync(deployedInterceptorsPath);
     assert.ok(!stat.isSymbolicLink(), "pi-gears/index.ts should be regular copied file");
     assert.ok(!statInterceptors.isSymbolicLink(), "pi-gears/interceptors.ts should be regular copied file");
+  });
 
-    const updated = JSON.parse(fs.readFileSync(modelsJsonPath, "utf-8"));
-    assert.ok(updated.providers.r9700);
-    assert.ok(updated.providers["cpu-llama"]);
-    assert.ok(updated.providers["apu-embeddings"]);
+  await runTest("Installer seeds gears.json from example but never overwrites an existing one", async () => {
+    setupSandbox();
+    const gearsJsonPath = path.join(sandboxDir, "gears.json");
+    const userConfig = JSON.stringify({ gears: [{ id: 9, name: "mine" }] }) + "\n";
+    fs.writeFileSync(gearsJsonPath, userConfig, "utf-8");
+
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: false,
+    });
+
+    assert.equal(fs.readFileSync(gearsJsonPath, "utf-8"), userConfig, "existing gears.json must be left untouched");
+
+    fs.rmSync(gearsJsonPath);
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: false,
+    });
+
+    const example = fs.readFileSync(path.join(projectRoot, "gears.json.example"), "utf-8");
+    assert.equal(fs.readFileSync(gearsJsonPath, "utf-8"), example, "gears.json should be seeded from gears.json.example");
   });
 
   await runTest("Installer execution with symlink mode (--custom-target --symlink)", async () => {
@@ -316,17 +376,58 @@ async function main() {
     assert.ok(!fs.existsSync(path.join(sandboxDir, "extensions")), "extensions dir should not be created");
   });
 
+  function seedLegacyFlatFiles() {
+    const extensionsDir = path.join(sandboxDir, "extensions");
+    fs.mkdirSync(extensionsDir, { recursive: true });
+    fs.writeFileSync(path.join(extensionsDir, "pi-gears.ts"), "// legacy\n", "utf-8");
+    fs.writeFileSync(path.join(extensionsDir, "interceptors.ts"), "// legacy\n", "utf-8");
+  }
+
+  await runTest("Installer dry-run leaves legacy extension files in place", async () => {
+    setupSandbox();
+    seedLegacyFlatFiles();
+
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: true,
+    });
+
+    assert.ok(fs.existsSync(path.join(sandboxDir, "extensions", "pi-gears.ts")), "legacy pi-gears.ts must survive dry-run");
+    assert.ok(fs.existsSync(path.join(sandboxDir, "extensions", "interceptors.ts")), "legacy interceptors.ts must survive dry-run");
+  });
+
+  await runTest("Installer live mode removes legacy flat extension files", async () => {
+    setupSandbox();
+    seedLegacyFlatFiles();
+
+    await runInstaller({
+      targetDir: sandboxDir,
+      scopeName: "test-sandbox",
+      symlink: false,
+      dryRun: false,
+    });
+
+    assert.ok(!fs.existsSync(path.join(sandboxDir, "extensions", "pi-gears.ts")), "legacy pi-gears.ts must be removed in live mode");
+    assert.ok(!fs.existsSync(path.join(sandboxDir, "extensions", "interceptors.ts")), "legacy interceptors.ts must be removed in live mode");
+    assert.ok(fs.existsSync(path.join(sandboxDir, "extensions", "pi-gears", "index.ts")), "extensions/pi-gears/index.ts should exist");
+  });
+
+  // Reset the sandbox so a test run leaves the tracked tree clean (only models.json is tracked)
+  setupSandbox();
+
   // 6. Tool Interceptor Registry & Subagent Propagation Tests
   console.log("\n--- 6. Tool Interceptor Registry & Subagent Propagation ---");
 
   await runTest("hasExplicitThinkingSuffix detects explicit suffixes and ignores clean model IDs", () => {
-    assert.ok(hasExplicitThinkingSuffix("r9700/qwen-gear-1:high"));
-    assert.ok(hasExplicitThinkingSuffix("cpu-llama/qwen-gear-2:off"));
+    assert.ok(hasExplicitThinkingSuffix("gpu/large-reasoning:high"));
+    assert.ok(hasExplicitThinkingSuffix("cpu/medium-fast:off"));
     assert.ok(hasExplicitThinkingSuffix("some-model:none"));
     assert.ok(hasExplicitThinkingSuffix("custom:low"));
     assert.ok(hasExplicitThinkingSuffix("custom:medium"));
-    assert.ok(!hasExplicitThinkingSuffix("r9700/qwen-gear-1"));
-    assert.ok(!hasExplicitThinkingSuffix("cpu-llama/qwen-gear-2"));
+    assert.ok(!hasExplicitThinkingSuffix("gpu/large-reasoning"));
+    assert.ok(!hasExplicitThinkingSuffix("cpu/medium-fast"));
     assert.ok(!hasExplicitThinkingSuffix("model-with-colon:unknown"));
   });
 
@@ -421,11 +522,11 @@ async function main() {
   });
 
   await runTest("Target agent filtering: patches worker/reviewer but leaves explorer unmodified", async () => {
-    const gear = findGear(1)!; // Gear 1 is r9700/qwen-gear-1, thinking: true
+    const gear = findGear(1)!; // Gear 1 is gpu/large-reasoning, thinking: true
 
-    const workerInput = { agent: "worker", task: "code something" };
-    const reviewerInput = { agent: "reviewer", task: "review something" };
-    const explorerInput = { agent: "explorer", task: "explore something" };
+    const workerInput: SubagentTaskInput = { agent: "worker", task: "code something" };
+    const reviewerInput: SubagentTaskInput = { agent: "reviewer", task: "review something" };
+    const explorerInput: SubagentTaskInput = { agent: "explorer", task: "explore something" };
 
     const ctx = {
       activeGear: gear,
@@ -441,15 +542,15 @@ async function main() {
     await executeToolInterceptors("subagent", reviewerInput, ctx, [subagentInterceptor]);
     await executeToolInterceptors("subagent", explorerInput, ctx, [subagentInterceptor]);
 
-    assert.equal(workerInput.model, "r9700/qwen-gear-1:high", "worker should be patched with gear model + :high");
-    assert.equal(reviewerInput.model, "r9700/qwen-gear-1:high", "reviewer should be patched with gear model + :high");
+    assert.equal(workerInput.model, "gpu/large-reasoning:high", "worker should be patched with gear model + :high");
+    assert.equal(reviewerInput.model, "gpu/large-reasoning:high", "reviewer should be patched with gear model + :high");
     assert.equal(explorerInput.model, undefined, "explorer should remain unpatched");
   });
 
   await runTest("Target agent filtering: wildcard * matches any agent name", async () => {
-    const gear = findGear(2)!; // Gear 2 is r9700/qwen-gear-2, thinking: false
+    const gear = findGear(2)!; // Gear 2 is gpu/medium-fast, thinking: false
 
-    const customInput = { agent: "any-custom-agent", task: "do something" };
+    const customInput: SubagentTaskInput = { agent: "any-custom-agent", task: "do something" };
     const ctx = {
       activeGear: gear,
       gearTargetModel: gear.modelId,
@@ -461,7 +562,7 @@ async function main() {
     };
 
     await executeToolInterceptors("subagent", customInput, ctx, [subagentInterceptor]);
-    assert.equal(customInput.model, "r9700/qwen-gear-2:off", "Wildcard should patch any-custom-agent");
+    assert.equal(customInput.model, "gpu/medium-fast:off", "Wildcard should patch any-custom-agent");
   });
 
   await runTest("Per-gear override test: gear-specific interceptors config overrides global defaults", async () => {
@@ -474,8 +575,8 @@ async function main() {
       },
     };
 
-    const workerInput = { agent: "worker", task: "task" };
-    const coderInput = { agent: "coder", task: "task" };
+    const workerInput: SubagentTaskInput = { agent: "worker", task: "task" };
+    const coderInput: SubagentTaskInput = { agent: "coder", task: "task" };
 
     const ctx = {
       activeGear: customGear,
@@ -487,13 +588,13 @@ async function main() {
     await executeToolInterceptors("subagent", coderInput, ctx, [subagentInterceptor]);
 
     assert.equal(workerInput.model, undefined, "worker should NOT be patched because per-gear config overrides targetAgents");
-    assert.equal(coderInput.model, "r9700/qwen-gear-1:high", "coder should be patched per gear override");
+    assert.equal(coderInput.model, "gpu/large-reasoning:high", "coder should be patched per gear override");
   });
 
   await runTest("Subagent interceptor patches parallel and chain dispatch arrays", async () => {
-    const gear = findGear(2)!; // Gear 2: r9700/qwen-gear-2, thinking: false (:off)
+    const gear = findGear(2)!; // Gear 2: gpu/medium-fast, thinking: false (:off)
 
-    const parallelInput = {
+    const parallelInput: { parallel: SubagentTaskInput[] } = {
       parallel: [
         { agent: "worker", task: "task 1" },
         { agent: "explorer", task: "task 2" },
@@ -501,7 +602,7 @@ async function main() {
       ],
     };
 
-    const chainInput = {
+    const chainInput: { chain: SubagentTaskInput[] } = {
       chain: [
         { agent: "worker", task: "step 1" },
         { agent: "coder", task: "step 2" },
@@ -516,12 +617,12 @@ async function main() {
     await executeToolInterceptors("subagent", parallelInput, ctx, [subagentInterceptor]);
     await executeToolInterceptors("subagent", chainInput, ctx, [subagentInterceptor]);
 
-    assert.equal(parallelInput.parallel[0].model, "r9700/qwen-gear-2:off");
+    assert.equal(parallelInput.parallel[0].model, "gpu/medium-fast:off");
     assert.equal(parallelInput.parallel[1].model, undefined, "explorer is not in default targetAgents");
-    assert.equal(parallelInput.parallel[2].model, "r9700/qwen-gear-2:off");
+    assert.equal(parallelInput.parallel[2].model, "gpu/medium-fast:off");
 
-    assert.equal(chainInput.chain[0].model, "r9700/qwen-gear-2:off");
-    assert.equal(chainInput.chain[1].model, "r9700/qwen-gear-2:off");
+    assert.equal(chainInput.chain[0].model, "gpu/medium-fast:off");
+    assert.equal(chainInput.chain[1].model, "gpu/medium-fast:off");
   });
 
   // Summary

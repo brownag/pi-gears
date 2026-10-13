@@ -2,8 +2,8 @@
 /**
  * pi-gears installer script
  *
- * Augments target models.json with local providers (r9700, cpu-llama) and deploys
- * pi-gears.ts & gears.json to global (~/.pi/agent/) or project-local (<project>/.pi/) scopes.
+ * Deploys pi-gears.ts and interceptors.ts and seeds gears.json from gears.json.example
+ * when it is missing, to global (~/.pi/agent/) or project-local (<project>/.pi/) scopes.
  */
 
 import * as fs from "node:fs";
@@ -13,42 +13,6 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-export const GEAR_MODELS = [
-  {
-    id: "qwen-gear-1",
-    name: "Qwen Gear 1 (Planning / Deep Thinking)",
-    reasoning: true,
-    contextWindow: 131072,
-    maxTokens: 16384,
-  },
-  {
-    id: "qwen-gear-2",
-    name: "Qwen Gear 2 (Execution / Direct Instruct)",
-    reasoning: false,
-    contextWindow: 131072,
-    maxTokens: 16384,
-  },
-];
-
-/**
- * Shared compatibility configuration for Qwen-based providers.
- * Defines thinking format, developer role support, and reasoning effort settings
- * used consistently across r9700, cpu-llama, and other Qwen provider implementations.
- */
-export const QWEN_COMPAT = {
-  thinkingFormat: "qwen-chat-template",
-  supportsDeveloperRole: false,
-  supportsReasoningEffort: false,
-} as const;
-
-export const CPU_LLAMA_PROVIDER = {
-  baseUrl: "http://127.0.0.1:8002/v1",
-  api: "openai-completions",
-  apiKey: "none",
-  compat: QWEN_COMPAT,
-  models: GEAR_MODELS,
-};
 
 export interface InstallOptions {
   targetDir: string;
@@ -139,59 +103,6 @@ Options:
 `);
 }
 
-export function mergeModelsConfig(existingRaw: string | null): { updatedConfig: Record<string, unknown>; merged: boolean } {
-  let config: Record<string, unknown> = { providers: {} };
-  if (existingRaw !== null) {
-    try {
-      config = JSON.parse(existingRaw);
-      if (typeof config !== "object" || config === null || Array.isArray(config)) {
-        config = { providers: {} };
-      }
-    } catch {
-      config = { providers: {} };
-    }
-  }
-
-  if (!config.providers || typeof config.providers !== "object" || Array.isArray(config.providers)) {
-    config.providers = {};
-  }
-
-  const providers = config.providers as Record<string, any>;
-
-  // 1. If r9700 provider exists, augment its models with qwen-gear-1 and qwen-gear-2
-  if (providers["r9700"] && typeof providers["r9700"] === "object") {
-    const existingModels = Array.isArray(providers["r9700"].models) ? providers["r9700"].models : [];
-    for (const gearModel of GEAR_MODELS) {
-      if (!existingModels.some((m: any) => m.id === gearModel.id)) {
-        existingModels.push(gearModel);
-      }
-    }
-    providers["r9700"].models = existingModels;
-    // ensure compat settings
-    providers["r9700"].compat = {
-      ...QWEN_COMPAT,
-      ...(providers["r9700"].compat || {}),
-    };
-  } else {
-    // initialize r9700
-    providers["r9700"] = {
-      baseUrl: "http://127.0.0.1:8001/v1",
-      api: "openai-completions",
-      apiKey: "none",
-      compat: QWEN_COMPAT,
-      models: [...GEAR_MODELS],
-    };
-  }
-
-  // 2. Augment / add cpu-llama provider for Port 8002
-  providers["cpu-llama"] = CPU_LLAMA_PROVIDER;
-
-  return {
-    updatedConfig: config,
-    merged: true,
-  };
-}
-
 export async function runInstaller(options: InstallOptions) {
   const { targetDir, scopeName, symlink, dryRun } = options;
   console.log(`=== pi-gears installer ===`);
@@ -200,28 +111,19 @@ export async function runInstaller(options: InstallOptions) {
   console.log(`Mode: ${dryRun ? "[DRY RUN]" : "[LIVE]"}`);
   console.log(`Deployment method: ${symlink ? "symlink" : "copy"}\n`);
 
-  const modelsJsonPath = path.join(targetDir, "models.json");
-  const modelsJsonBakPath = path.join(targetDir, "models.json.bak");
   const gearsJsonPath = path.join(targetDir, "gears.json");
   const extensionsDir = path.join(targetDir, "extensions");
   const packageExtensionsDir = path.join(extensionsDir, "pi-gears");
   const targetExtensionPath = path.join(packageExtensionsDir, "index.ts");
   const targetInterceptorsPath = path.join(packageExtensionsDir, "interceptors.ts");
 
-  // Clean up legacy flat extension file if present
   const legacyFlatExtensionPath = path.join(extensionsDir, "pi-gears.ts");
   const legacyFlatInterceptorsPath = path.join(extensionsDir, "interceptors.ts");
-  if (fs.existsSync(legacyFlatExtensionPath)) {
-    fs.rmSync(legacyFlatExtensionPath, { force: true });
-  }
-  if (fs.existsSync(legacyFlatInterceptorsPath)) {
-    fs.rmSync(legacyFlatInterceptorsPath, { force: true });
-  }
 
-  // Locate source pi-gears.ts, interceptors.ts, and gears.json
+  // Locate source pi-gears.ts, interceptors.ts, and gears.json.example
   let sourceExtensionPath = path.join(__dirname, "pi-gears.ts");
   let sourceInterceptorsPath = path.join(__dirname, "interceptors.ts");
-  let sourceGearsJsonPath = path.join(__dirname, "gears.json");
+  let sourceGearsJsonPath = path.join(__dirname, "gears.json.example");
   if (!fs.existsSync(sourceExtensionPath)) {
     sourceExtensionPath = path.join(process.cwd(), "pi-gears.ts");
   }
@@ -229,7 +131,7 @@ export async function runInstaller(options: InstallOptions) {
     sourceInterceptorsPath = path.join(process.cwd(), "interceptors.ts");
   }
   if (!fs.existsSync(sourceGearsJsonPath)) {
-    sourceGearsJsonPath = path.join(process.cwd(), "gears.json");
+    sourceGearsJsonPath = path.join(process.cwd(), "gears.json.example");
   }
 
   if (!fs.existsSync(sourceExtensionPath)) {
@@ -239,28 +141,17 @@ export async function runInstaller(options: InstallOptions) {
     throw new Error(`Source interceptors file not found at ${sourceInterceptorsPath}`);
   }
 
-  // 1. Check existing models.json
-  let existingContent: string | null = null;
-  const fileExists = fs.existsSync(modelsJsonPath);
-  if (fileExists) {
-    existingContent = fs.readFileSync(modelsJsonPath, "utf-8");
-  }
-
-  const { updatedConfig } = mergeModelsConfig(existingContent);
-  const updatedJsonStr = JSON.stringify(updatedConfig, null, 2) + "\n";
-
-  console.log(`[Config] models.json target: ${modelsJsonPath}`);
-  if (fileExists) {
-    console.log(`[Config] Existing models.json detected. Backup will be created at: ${modelsJsonBakPath}`);
-  } else {
-    console.log(`[Config] models.json does not exist. A new file will be initialized.`);
-  }
-
   if (dryRun) {
-    console.log("\n[Dry Run] Proposed models.json content:\n----------------------------------------");
-    console.log(updatedJsonStr);
-    console.log("----------------------------------------");
-    console.log(`[Dry Run] Would copy / symlink gears.json -> ${gearsJsonPath}`);
+    for (const legacyPath of [legacyFlatExtensionPath, legacyFlatInterceptorsPath]) {
+      if (fs.existsSync(legacyPath)) {
+        console.log(`[Dry Run] Would remove legacy file ${legacyPath}`);
+      }
+    }
+    if (fs.existsSync(gearsJsonPath)) {
+      console.log(`[Dry Run] Would keep existing gears.json at ${gearsJsonPath}`);
+    } else {
+      console.log(`[Dry Run] Would seed ${gearsJsonPath} from ${sourceGearsJsonPath}`);
+    }
     console.log(`[Dry Run] Would ensure directory exists: ${packageExtensionsDir}`);
     console.log(`[Dry Run] Would ${symlink ? "symlink" : "copy"} ${sourceExtensionPath} -> ${targetExtensionPath}`);
     console.log(`[Dry Run] Would ${symlink ? "symlink" : "copy"} ${sourceInterceptorsPath} -> ${targetInterceptorsPath}`);
@@ -269,20 +160,21 @@ export async function runInstaller(options: InstallOptions) {
   }
 
   // Live execution
+  // Clean up legacy flat extension file if present
+  if (fs.existsSync(legacyFlatExtensionPath)) {
+    fs.rmSync(legacyFlatExtensionPath, { force: true });
+  }
+  if (fs.existsSync(legacyFlatInterceptorsPath)) {
+    fs.rmSync(legacyFlatInterceptorsPath, { force: true });
+  }
   fs.mkdirSync(targetDir, { recursive: true });
 
-  if (fileExists && existingContent !== null) {
-    fs.writeFileSync(modelsJsonBakPath, existingContent, "utf-8");
-    console.log(`[Success] Created backup: ${modelsJsonBakPath}`);
-  }
-
-  fs.writeFileSync(modelsJsonPath, updatedJsonStr, "utf-8");
-  console.log(`[Success] Updated models.json with r9700 and cpu-llama gear models.`);
-
-  // Deploy gears.json
-  if (fs.existsSync(sourceGearsJsonPath)) {
+  // Seed gears.json from the example, never overwriting a user's existing config
+  if (fs.existsSync(gearsJsonPath)) {
+    console.log(`[Skip] Keeping existing gears configuration: ${gearsJsonPath}`);
+  } else if (fs.existsSync(sourceGearsJsonPath)) {
     fs.copyFileSync(sourceGearsJsonPath, gearsJsonPath);
-    console.log(`[Success] Deployed gears configuration to: ${gearsJsonPath}`);
+    console.log(`[Success] Seeded gears configuration from example: ${gearsJsonPath} (edit providers/models to match models.json)`);
   }
 
   fs.mkdirSync(packageExtensionsDir, { recursive: true });

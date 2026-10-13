@@ -2,9 +2,16 @@
   "name": "pi-gears",
   "version": "0.1.0",
   "description": "Cognitive execution transmission for Pi coding agent",
+  "license": "MIT",
+  "author": {
+    "name": "Andrew Brown",
+    "email": "brown.andrewg@gmail.com",
+    "url": "https://orcid.org/0000-0002-4565-533X"
+  },
   "type": "module",
   "scripts": {
     "test": "tsx test/test-pi-gears.ts",
+    "typecheck": "tsc --noEmit --strict --module nodenext --target es2022 --skipLibCheck *.ts test/*.ts",
     "install:dry": "tsx install.ts --dry-run",
     "install:global": "tsx install.ts --global",
     "install:symlink": "tsx install.ts --global --symlink"

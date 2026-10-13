@@ -23,7 +23,7 @@ First, ensure your Pi installation has one or more providers configured in `mode
 Example provider configurations:
 - `gpu`: A model optimized for your GPU (e.g., an A100 with Qwen or Claude)
 - `cpu`: A model optimized for CPU-only execution (smaller model or local llama.cpp instance)
-- `local-llm`: A local model server (llama.cpp, vLLM, Ollama)
+- `my-server`: A local model server (llama.cpp, vLLM, Ollama)
 
 ### Step 2: Install pi-gears
 
@@ -40,18 +40,18 @@ npx tsx install.ts --project /path/to/your/project --symlink
 npx tsx install.ts --dry-run
 ```
 
-The installer merges model definitions into `models.json` and deploys the extension files.
+The installer deploys the extension files and seeds `gears.json` from `gears.json.example` if you don't already have one.
 
-### Step 3: Copy and Customize `gears.example.json`
+### Step 3: Customize `gears.json`
 
-Copy the generic example to create your personal configuration:
+If you skipped the installer or want a fresh copy, copy the generic example yourself:
 
 ```bash
 # Copy to global Pi agent directory
-cp gears.example.json ~/.pi/agent/gears.json
+cp gears.json.example ~/.pi/agent/gears.json
 
 # Or copy to your project's `.pi/` directory
-cp gears.example.json .pi/gears.json
+cp gears.json.example .pi/gears.json
 ```
 
 Then edit `gears.json` to match your actual provider and model names:
@@ -75,7 +75,7 @@ Then edit `gears.json` to match your actual provider and model names:
 }
 ```
 
-**Important:** The `gears.example.json` file in the repository remains generic (using placeholder names like `gpu`, `cpu`, `large-reasoning`, `medium-fast`). It is safe to commit. Your personal `gears.json` is in `.gitignore` and will not be tracked by git.
+**Important:** The `gears.json.example` file in the repository remains generic (using placeholder names like `gpu`, `cpu`, `large-reasoning`, `medium-fast`). It is safe to commit. Your personal `gears.json` is in `.gitignore` and will not be tracked by git.
 
 ### Step 4: Run `/gear` to Switch Gears
 
@@ -223,25 +223,25 @@ Customize `provider` and `model` to match your setup in `models.json`:
      "gears": [
        {
          "id": 1,
-         "name": "qwen-plan",
+         "name": "my-plan",
          "alias": ["plan", "1"],
-         "provider": "local-llm",
-         "model": "qwen-35b-mtp",
-         "modelId": "local-llm/qwen-35b-mtp",
+         "provider": "my-server",
+         "model": "big-model",
+         "modelId": "my-server/big-model",
          "temperature": 0.6,
          "thinking": true,
-         "description": "Qwen 35B deep reasoning"
+         "description": "Deep reasoning"
        },
        {
          "id": 2,
-         "name": "gemma-exec",
+         "name": "my-exec",
          "alias": ["exec", "2"],
-         "provider": "local-llm",
-         "model": "gemma4-26b",
-         "modelId": "local-llm/gemma4-26b",
+         "provider": "my-server",
+         "model": "small-model",
+         "modelId": "my-server/small-model",
          "temperature": 0.1,
          "thinking": false,
-         "description": "Gemma 26B fast execution"
+         "description": "Fast execution"
        }
      ]
    }
@@ -250,7 +250,7 @@ Customize `provider` and `model` to match your setup in `models.json`:
 
 ## Installation
 
-The `install.ts` script merges model entries into `models.json` and deploys the extension files. See the "Getting Started" section above for the complete setup workflow.
+The `install.ts` script deploys the extension files. See the "Getting Started" section above for the complete setup workflow.
 
 ```bash
 # Preview changes without writing to disk
@@ -264,10 +264,9 @@ npx tsx install.ts --project /path/to/project --symlink
 ```
 
 The installer:
-- Merges models without dropping existing providers.
-- Writes a `models.json.bak` backup file first.
 - Copies or symlinks `pi-gears.ts` and `interceptors.ts` to `extensions/`.
-- Deploys `gears.example.json` (you then customize to create `gears.json`).
+- Seeds `gears.json` from `gears.json.example` if the target has none. An existing `gears.json` is never overwritten.
+- Never touches `models.json`. Define your providers there yourself (Step 1).
 
 ## Tests
 
@@ -276,3 +275,7 @@ npm test
 ```
 
 Runs test suite against a mock sandbox in `./test-sandbox/`. Does not touch `~/.pi`.
+
+## License
+
+MIT © Andrew Brown. See `LICENSE`. To cite pi-gears, see `CITATION.cff`.
